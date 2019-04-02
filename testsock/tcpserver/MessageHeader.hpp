@@ -26,17 +26,18 @@ struct LOGIN :public DATAHEADER
 		datalen = sizeof(LOGIN);
 		cmd = CMD_LOGIN;
 	}
-	char name[32];
-	char psw[32];
+	char name[512];
+	char psw[512];
 };
 struct LOGINRESULT :public DATAHEADER{
 	LOGINRESULT()
 	{
 		datalen = sizeof(LOGINRESULT);
-		cmd = CMD_LOGOUT_RESULT;
+		cmd = CMD_LOGIN_RESULT;
 		nresult = 0;
 	}
 	int nresult;
+	char name[256];
 };
 struct LOGOUT :public DATAHEADER
 {

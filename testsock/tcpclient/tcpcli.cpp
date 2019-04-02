@@ -3,7 +3,10 @@
 #include"TCPClient.hpp"
 #include<thread>
 bool g_bRun = true;
-void Input(CTCPClient*client)
+const int cCount = 8;
+const int cThrct = 1;
+CTCPClient* client[cCount];
+void Input()
 {
 	while (true)
 	{
@@ -12,7 +15,7 @@ void Input(CTCPClient*client)
 		if (0 == strcmp(cmdbuf, "exit"))
 		{
 			printf("退出线程!\n");
-			client->Close();
+			g_bRun = false;
 			break;
 		}
 
@@ -20,13 +23,13 @@ void Input(CTCPClient*client)
 			LOGIN login;
 			strcpy(login.name, "邢建锋");
 			strcpy(login.psw, "86420az");
-			client->Send(&login);
+			//client->Send(&login);
 		}
 		else if (0 == strcmp(cmdbuf, "logout")){
 
 			LOGOUT logout;
 			strcpy(logout.name, "邢建锋");
-			client->Send(&logout);
+			//client->Send(&logout);
 		}
 		else
 		{
@@ -34,20 +37,63 @@ void Input(CTCPClient*client)
 		}
 	}
 }
-int main(){
-	CTCPClient client;
-	client.InitSocket();
-	client.Connect("127.0.0.1", 4567);
-	std::thread t1(Input, &client);
-	t1.detach();
-	//t1.join();
-	while (client.IsRun() )
+void SendThread(int n)
+{
+	int c = cCount / cThrct;
+	int begin = n*c;
+	int end = (n + 1)*c;
+	for (int i = begin; i < end; i++)
 	{
-		if (!client.OnRun())
+		client[i] = new CTCPClient();
+		int n=client[i]->Connect("127.0.0.1", 4567);
+		if (n == -1)
+			printf("第%d个客户端连接服务器失败", i);
+		else
+			printf("第%d个客户端连接服务器成功", i);
+	}
+	LOGIN login;
+	strcpy(login.name, "xingjianfeng");
+	strcpy(login.psw, "xingjianfeng");
+	while (g_bRun)
+	{
+		for (int i = begin; i < end; i++)
 		{
-			break;
+			if (!client[i]->OnRun())
+			{
+				client[i]->Close();
+				delete client[i];
+				client[i] = nullptr;
+				g_bRun = false;
+				break;
+			}
+			else
+			client[i]->Send(&login);
 		}
 	}
-	//system("pause");
+	for (int i = begin; i < end; i++)
+	{
+		if (client[i])
+		{
+			client[i]->Close();
+			delete client[i];
+		}
+	}
+
+}
+int main(){
+	std::thread t1[cThrct];
+	for (size_t i = 0; i < cThrct; i++)
+	{
+		t1[i]=std::thread(SendThread,i);
+	}
+	for (size_t i = 0; i < cThrct; i++)
+	{
+		t1[i].join();
+	}
+	//std::thread t1(Input, &client);
+	//t1.detach();
+	//t1.join();
+	
+	system("pause");
 	return 0;
 }

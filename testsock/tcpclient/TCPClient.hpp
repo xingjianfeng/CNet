@@ -15,10 +15,17 @@
 #endif
 #include<stdio.h>
 #include"MessageHeader.hpp"
+#ifndef MAX_BUFFER_SIZE
+#define MAX_BUFFER_SIZE 512
+#endif
 class CTCPClient
 {
+	char _msgbuf[MAX_BUFFER_SIZE * 10];
+	int _lastpos = 0;
 public:
-	CTCPClient() :_sock(INVALID_SOCKET){};
+	CTCPClient() :_sock(INVALID_SOCKET){
+		InitSocket();
+	};
 	virtual ~CTCPClient(){ Close(); };
 	void InitSocket()
 	{
@@ -54,11 +61,11 @@ public:
 #endif
 		if (SOCKET_ERROR == connect(_sock, (sockaddr*)&_sin, sizeof(_sin)))
 		{
-			printf("connect failed!\n");
+			//printf("connect failed!\n");
 			return -1;
 		}
 		else{
-			printf("connect success!\n");
+			//printf("connect success!\n");
 		}
 		return 0;
 	};
@@ -66,18 +73,34 @@ public:
 	int Recv()
 	{
 		//return recv(_sock, buf, len, 0);
-		char chrecv[1024] = {};
-		int nlen = recv(_sock + 3, chrecv, sizeof(DATAHEADER), 0);
+		char chrecv[MAX_BUFFER_SIZE] = {};
+		int nlen = recv(_sock, chrecv, MAX_BUFFER_SIZE, 0);
 		if (nlen <= 0)
 		{
-			printf("与服务器%d断开连接！\n", _sock);
+			//printf("与服务器%d断开连接！\n", _sock);
 			return -1;
 		}
-
-		DATAHEADER* header = (DATAHEADER*)chrecv;
+		printf("接收数据长度：%d\n", nlen);
+		memcpy(_msgbuf + _lastpos, chrecv, nlen);
+		_lastpos += nlen;
+		while (_lastpos >= sizeof(DATAHEADER))
+		{
+			DATAHEADER* header = (DATAHEADER*)_msgbuf;
+			if (_lastpos >= header->datalen)
+			{
+				//处理消息
+				OnNetMsg(header);
+				int nsize = _lastpos - header->datalen;
+				memcpy(_msgbuf, _msgbuf + header->datalen, nsize);
+				_lastpos = nsize;
+			}
+			else
+				break;
+		}
+		/*DATAHEADER* header = (DATAHEADER*)chrecv;
 		printf("收到服务器数据反馈：%d,数据长度：%d。\n", header->cmd, header->datalen);
 		recv(_sock, chrecv + sizeof(DATAHEADER), header->datalen - sizeof(DATAHEADER), 0);
-		OnNetMsg(header);
+		OnNetMsg(header);*/
 		return 0;
 	}
 	//发送数据
@@ -140,7 +163,7 @@ public:
 		case CMD_LOGIN_RESULT:
 		{
 								 LOGINRESULT* loginret = (LOGINRESULT*)header;
-								 printf("服务器登录回馈:result=%d，服务器请求：%d,数据长度：%d\n", loginret->nresult, loginret->cmd, loginret->datalen);
+								 //printf("服务器登录回馈:result=%d，服务器请求：%d,数据长度：%d\n", loginret->nresult, loginret->cmd, loginret->datalen);
 		}
 			break;
 		case CMD_LOGOUT_RESULT:

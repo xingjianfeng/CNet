@@ -26,8 +26,8 @@ struct LOGIN :public DATAHEADER
 		datalen = sizeof(LOGIN);
 		cmd = CMD_LOGIN;
 	}
-	char name[32];
-	char psw[32];
+	char name[512];
+	char psw[512];
 };
 struct LOGINRESULT :public DATAHEADER{
 	LOGINRESULT()
@@ -37,6 +37,7 @@ struct LOGINRESULT :public DATAHEADER{
 		nresult = 0;
 	}
 	int nresult;
+	char name[256];
 };
 struct LOGOUT :public DATAHEADER
 {

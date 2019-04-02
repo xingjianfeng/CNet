@@ -1,6 +1,7 @@
 #ifndef _TCPServer_hpp_
 #define _TCPServer_hpp_
 #ifdef _WIN32
+#define FD_SETSIZE 1024
 #include<Windows.h>
 #include<WinSock2.h>
 #pragma comment(lib,"ws2_32.lib")
@@ -16,6 +17,48 @@
 #include<stdio.h>
 #include<vector>
 #include"MessageHeader.hpp"
+#ifndef MAX_BUFFER_SIZE
+#define MAX_BUFFER_SIZE 512
+#endif
+class ClientSocket
+{
+public:
+	ClientSocket(SOCKET sock = INVALID_SOCKET)
+	{
+		_csock = sock;
+		memset(_msgbuf, 0, MAX_BUFFER_SIZE * 10);
+		_lastpos = 0;
+	}
+	SOCKET& CSock()
+	{
+		return _csock;
+	}
+	char* GetMsgBuf()
+	{
+		return _msgbuf;
+	}
+	int GetLastPos()
+	{
+		return _lastpos;
+	}
+	void SetLastPos(int pos)
+	{
+		_lastpos = pos;
+	}
+	void BufCopy(char*buf,int len)
+	{
+		memcpy(_msgbuf+_lastpos,buf,len);
+		_lastpos += len;
+	}
+	void BufMove(int len)
+	{
+		memcpy(_msgbuf, _msgbuf+len,_lastpos-len);
+	}
+private:
+	char _msgbuf[MAX_BUFFER_SIZE*10];
+	int _lastpos;
+	SOCKET _csock;
+};
 class CTCPServer
 {
 	SOCKET _sock;
@@ -98,12 +141,14 @@ public:
 	void Close()
 	{
 		//程序结束 清空socket
-		for (size_t n = 0; n < g_clients.size(); n++)
+		for (size_t n = 0; n < _clients.size(); n++)
 		{
 #ifdef _WIN32
-			closesocket(g_clients[n]);
+			closesocket(_clients[n]->CSock());
+			delete _clients[n];
 #else
-			close(g_clients[n]);
+			close(_clients[n]->CSock());
+			delete _clients[n];
 #endif
 		}
 		if (_sock != INVALID_SOCKET)
@@ -134,11 +179,11 @@ public:
 		else{
 			//socktmp = _clisock;
 			//FD_SET(_clisock, &fdRead);
-			NEWUSER newuser;
+		/*	NEWUSER newuser;
 			newuser.sock = (int)_clisock;
-			SendAllClient(&newuser);
-			g_clients.push_back(_clisock);
-			printf("new client:<socket=%d>,ip=%s\n", _clisock, inet_ntoa(clientaddr.sin_addr));
+			SendAllClient(&newuser);*/
+			_clients.push_back(new ClientSocket(_clisock));
+			printf("第%d个new client:<socket=%d>,ip=%s\n",_clients.size()-1, _clisock, inet_ntoa(clientaddr.sin_addr));
 		}
 		return _clisock;
 	}
@@ -146,7 +191,7 @@ public:
 	{
 		if (IsRun())
 		{
-			timeval tout = { 1, 0 };
+			timeval tout = { 0, 0 };
 			fd_set fdRead, fdWrite, fdExp;
 			FD_ZERO(&fdRead);
 			FD_ZERO(&fdWrite);
@@ -154,9 +199,9 @@ public:
 			FD_SET(_sock, &fdRead);
 			FD_SET(_sock, &fdWrite);
 			FD_SET(_sock, &fdExp);
-			for (int n = g_clients.size() - 1; n >= 0; n--)
+			for (int n = _clients.size() - 1; n >= 0; n--)
 			{
-				FD_SET(g_clients[n], &fdRead);
+				FD_SET(_clients[n]->CSock(), &fdRead);
 			}
 			int nret = select(_sock + 1, &fdRead, &fdWrite, &fdExp, &tout);
 			if (nret<0)
@@ -169,41 +214,60 @@ public:
 			{
 				FD_CLR(_sock, &fdRead);
 				Accept();
+				return true;
 			}
 			//遍历可读socket
-			for (size_t n = 0; n< fdRead.fd_count; n++)
+			for (size_t n = 0; n< _clients.size(); n++)
 			{
-				if (-1 == RecvData(fdRead.fd_array[n]))
+				if (FD_ISSET(_clients[n]->CSock(), &fdRead))
 				{
-					auto itr = find(g_clients.begin(), g_clients.end(), fdRead.fd_array[n]);
-					if (itr != g_clients.end())
+					if (-1 == RecvData(_clients[n]))
 					{
-						g_clients.erase(itr);
+						auto itr = _clients.begin()+n;
+						if (itr != _clients.end())
+						{
+							delete _clients[n];
+							_clients.erase(itr);
+						}
 					}
 				}
 			}
-			printf("空闲时间处理其他业务……\n");
+			//printf("空闲时间处理其他业务……\n");
 			return true;
 		}
 		return false;
 	}
-	int RecvData(SOCKET& _clisock)
+	int RecvData(ClientSocket* _clisock)
 	{
-		char recvbuf[1024] = {};
-		int nlen = recv(_clisock, recvbuf, sizeof(DATAHEADER), 0);
+		char recvbuf[MAX_BUFFER_SIZE] = {};
+		int nlen = recv(_clisock->CSock(), recvbuf, MAX_BUFFER_SIZE, 0);
 		if (nlen <= 0)
 		{
-			printf("客户端%d退出，程序结束！\n", _clisock);
-			USEREXIT userexit;
-			userexit.sock = (int)_clisock;
-			SendAllClient(&userexit);
+			printf("客户端%d退出，程序结束！\n", _clisock->CSock());
+			//USEREXIT userexit;
+			//userexit.sock = (int)_clisock->CSock();
+			//SendAllClient(&userexit);
 			return -1;
 		}
-
+		printf("接收客户端<socket=%d>数据长度:%d\n", _clisock->CSock(), nlen);
+		//_clisock->BufCopy(recvbuf, nlen);
+		//while (_clisock->GetLastPos()>=sizeof(DATAHEADER))
+		//{
+		//	DATAHEADER* header = (DATAHEADER*)_clisock->GetMsgBuf();
+		//	if (_clisock->GetLastPos() >= header->datalen)
+		//	{
+		//		OnNetMsg(header, _clisock->CSock());
+		//		_clisock->BufMove(header->datalen);
+		//		_clisock->SetLastPos(_clisock->GetLastPos() - header->datalen);
+		//	}
+		//	else
+		//		break;
+		//}
+		/*
 		DATAHEADER* header = (DATAHEADER*)recvbuf;
 		printf("收到客户端命令：%d,数据长度：%d。\n", header->cmd, header->datalen);
 		recv(_clisock, recvbuf + sizeof(DATAHEADER), header->datalen - sizeof(DATAHEADER), 0);
-		OnNetMsg(header,_clisock);
+		OnNetMsg(header,_clisock);*/
 		return 0;
 	}
 	int Send(SOCKET _clisock, DATAHEADER*header)
@@ -216,9 +280,9 @@ public:
 	{
 		if (IsRun()&&header)
 		{
-			for (int n = g_clients.size() - 1; n >= 0; n--)
+			for (int n = _clients.size() - 1; n >= 0; n--)
 			{
-				Send(g_clients[n], header);
+				Send(_clients[n]->CSock(), header);
 			}
 		}
 	}
@@ -229,7 +293,7 @@ public:
 		case CMD_LOGIN:
 		{
 						  LOGIN* login = (LOGIN*)header;
-						  printf("登录信息:name=%s,psw=%s，客户端命令：%d,数据长度：%d\n", login->name, login->psw, login->cmd, login->datalen);
+						 // printf("登录信息:name=%s,psw=%s，客户端命令：%d,数据长度：%d\n", login->name, login->psw, login->cmd, login->datalen);
 
 						  LOGINRESULT loginres;
 						  Send(_clisock, &loginres);
@@ -250,6 +314,6 @@ public:
 	}
 private:
 
-	std::vector<SOCKET> g_clients;
+	std::vector<ClientSocket*> _clients;
 };
 #endif
