@@ -3,6 +3,7 @@
 #include<WinSock2.h>
 #pragma comment(lib,"ws2_32.lib")
 int main(){
+	cout<<11<<endl;
 	WORD ver = MAKEWORD(2,2);
 	WSADATA WSAData;
 	WSAStartup(ver,&WSAData);
