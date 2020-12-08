@@ -1,4 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
+
 #define _CRT_SECURE_NO_WARNINGS
 #include"TCPClient.hpp"
 #include<thread>
